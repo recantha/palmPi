@@ -6,6 +6,8 @@ import math
 import bme280
 from gpiozero import LED, Button
 from subprocess import call
+from ISStreamer.Streamer import Streamer
+import threading
 
 lcdmode = 'i2c'
 cols = 16
@@ -65,7 +67,68 @@ def shutdown():
     call("sudo shutdown -h now", shell=True)
     exit(1)
 
+def streamer_log(type, value):
+    if streamer_started:
+        streamer.log(type, value)
+    else:
+        print("Not streaming value ", type, "=", value)
+
+class readingThread (threading.Thread):
+    def __init__(self, threadID, name, counter):
+        threading.Thread.__init__(self)
+        self.threadID = threadID
+        self.name = name
+        self.counter = counter
+        self.daemon = True
+
+    def run(self):
+        print ("Starting " + self.name)
+        print("Streaming readings")
+        stream_readings()
+        print ("Exiting " + self.name)
+
+def stream_readings():
+    while True:
+        i_temp_c, i_temp_f = read_internal_temperature()
+        e_temp_c, e_temp_f = read_external_temperature()
+        e_pressure = read_external_pressure()
+        print("Streaming temps")
+        streamer_log("Internal temp C", i_temp_c)
+        streamer_log("Internal temp F", i_temp_f)
+        streamer_log("External temp C", e_temp_c)
+        streamer_log("External temp F", e_temp_f)
+        print("Streaming pressure")
+        streamer_log("Pressure", e_pressure)
+
+        streamer.flush()
+
+        print("Sleeping for 15 minutes")
+        sleep(900)
+
 red_button_led.on()
+
+lcd.write_string("palmPi started")
+sleep(1)
+lcd.clear()
+
+# Streamer constructor, this will create a bucket called Python Stream Example
+# you'll be able to see this name in your list of logs on initialstate.com
+# your access_key is a secret and is specific to you, don't share it!
+try:
+    streamer = Streamer(bucket_name="palmPi", bucket_key="WQ44PMQYULFV", access_key="y8ZCpNZ5ZYQQLfU5zKqdZrSEyizKFc17", debug_level=0)
+    streamer_started = True
+    print("Streamer started")
+    lcd.write_string("Streamer started")
+
+except:
+    lcd.write_string("Streamer not started")
+    streamer_started = False
+
+sleep(1)
+lcd.clear()
+
+thread_readings = readingThread(1, "Reading-Thread", 1)
+thread_readings.start()
 
 while True:
     if red_button.is_pressed:
@@ -91,6 +154,7 @@ while True:
             lcd.write_string("F")
             print("Int temp: ", temp_c, " C")
             print("Int temp: ", temp_f, " F")
+
             sleep(0.5)
             lcd.clear()
  
@@ -106,6 +170,7 @@ while True:
 
             print("Ext temp: ", temp_c, " C")
             print("Ext temp: ", temp_f, " F")
+
             sleep(0.5)
             lcd.clear()
 
@@ -115,6 +180,7 @@ while True:
             lcd.write_string(str(pressure))
             lcd.write_string("hPa")
             print("Pressure: ", pressure, " hPa")
+
             sleep(0.5)
             lcd.clear()
 
