@@ -1,6 +1,6 @@
 from RPLCD import i2c
 import ifaddr
-from time import sleep
+from time import sleep, strftime
 import Adafruit_ADS1x15
 import math
 import bme280
@@ -8,21 +8,8 @@ from gpiozero import LED, Button
 from subprocess import call
 from ISStreamer.Streamer import Streamer
 import threading
-
-lcdmode = 'i2c'
-cols = 16
-rows = 2
-charmap = 'A00'
-i2c_expander = 'PCF8574'
-address = 0x3f
-port = 1 # 0 on an older Pi
-
-lcd = i2c.CharLCD(i2c_expander, address, port=port, charmap=charmap,
-                  cols=cols, rows=rows)
-lcd.clear()
-
-red_button_led = LED(18)
-red_button = Button(17)
+from twython import Twython
+from auth import (consumer_key, consumer_secret, access_token, access_token_secret)
 
 def read_ip_addresses():
     adapters = ifaddr.get_adapters()
@@ -33,8 +20,6 @@ def read_ip_addresses():
             addrs.append(ip.ip)
 
     return addrs
-
-adc = Adafruit_ADS1x15.ADS1015()
 
 def read_internal_temperature():
     ADC_GAIN = 2
@@ -57,13 +42,25 @@ def read_external_pressure():
     pressure = "{:.2f}".format(pressure)
     return pressure
 
-shutting_down = False
-def shutdown():
+def shutdown_manual():
+    shutdown("Manual")
+
+def shutdown_battery_warning():
+    shutdown("Battery")
+
+def shutdown(reason):
     shutting_down = True
+    twitter_status = get_timestamp() + " - Shutting down - " + reason
+    twitter.update_status(status=twitter_status)
+
     lcd.clear()
     lcd.write_string('Shutting down')
+    sleep(2)
+    lcd.clear()
+
+    lcd.write_string(reason)
     red_button_led.blink(n=5)
-    sleep(3)
+    sleep(2)
     call("sudo shutdown -h now", shell=True)
     exit(1)
 
@@ -99,13 +96,51 @@ def stream_readings():
         streamer_log("External temp F", e_temp_f)
         print("Streaming pressure")
         streamer_log("Pressure", e_pressure)
-
         streamer.flush()
+
+        try:
+            twitter_status = get_timestamp() + " - Int temp: " + str(i_temp_c) + "C / Ext temp:" + str(e_temp_c) + "C / Pressure: " + str(e_pressure) + "hPa"
+            twitter.update_status(status=twitter_status)
+        except:
+            print("Twython did not tweet")
 
         print("Sleeping for 15 minutes")
         sleep(900)
 
+def get_timestamp():
+    timestamp = strftime("%Y%m%d-%H:%M:%S")
+
+    return timestamp
+
+try:
+    twitter = Twython(consumer_key, consumer_secret, access_token, access_token_secret)
+    twitter_status = "palmPi started up at " + get_timestamp()
+    twitter.update_status(status=twitter_status)
+
+except:
+    print("Twython did not tweet")
+
+adc = Adafruit_ADS1x15.ADS1015()
+shutting_down = False
+
+lcdmode = 'i2c'
+cols = 16
+rows = 2
+charmap = 'A00'
+i2c_expander = 'PCF8574'
+address = 0x3f
+port = 1 # 0 on an older Pi
+
+lcd = i2c.CharLCD(i2c_expander, address, port=port, charmap=charmap,
+                  cols=cols, rows=rows)
+lcd.clear()
+
+red_button_led = LED(18)
+red_button = Button(17)
 red_button_led.on()
+
+battery_warning = Button(4)
+battery_warning.when_pressed = shutdown_battery_warning
 
 lcd.write_string("palmPi started")
 sleep(1)
@@ -132,7 +167,7 @@ thread_readings.start()
 
 while True:
     if red_button.is_pressed:
-        shutdown()
+        shutdown_manual()
 
     if not shutting_down:
         addrs = read_ip_addresses()
