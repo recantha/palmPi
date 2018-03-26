@@ -1,3 +1,9 @@
+# palmPi code written by Michael Horne
+# @recantha
+# www.recantha.co.uk/blog
+# March 2018
+
+# import libraries
 from RPLCD import i2c
 import ifaddr
 from time import sleep, strftime
@@ -11,6 +17,7 @@ import threading
 from twython import Twython
 from auth import (consumer_key, consumer_secret, access_token, access_token_secret)
 
+# Function to return IP address list
 def read_ip_addresses():
     adapters = ifaddr.get_adapters()
 
@@ -21,6 +28,7 @@ def read_ip_addresses():
 
     return addrs
 
+# Function to use ADC to read temperature from TMP36 and convert it to C and F
 def read_internal_temperature():
     ADC_GAIN = 2
     adc_reading = adc.read_adc(0, gain=ADC_GAIN)
@@ -31,23 +39,28 @@ def read_internal_temperature():
 
     return "{:+.2f}".format(temp_c), "{:+.2f}".format(temp_f)
 
+# Function to read temperature from BMP280 and convert it to F
 def read_external_temperature():
     temp_c,pressure,humidity = bme280.readBME280All()
     temp_f = (temp_c * 1.8) + 32
 
     return "{:+.2f}".format(temp_c), "{:+.2f}".format(temp_f)
 
+# Function to read pressure from BMP280
 def read_external_pressure():
     temperature,pressure,humidity = bme280.readBME280All()
     pressure = "{:.2f}".format(pressure)
     return pressure
 
+# Wrapper for manual shutdown
 def shutdown_manual():
     shutdown("Manual")
 
+# Wrapper for battery warning shutdown
 def shutdown_battery_warning():
     shutdown("Battery")
 
+# Actual shutdown function
 def shutdown(reason):
     shutting_down = True
     twitter_status = get_timestamp() + " - Shutting down - " + reason
@@ -64,12 +77,14 @@ def shutdown(reason):
     call("sudo shutdown -h now", shell=True)
     exit(1)
 
+# Streamer log wrapper
 def streamer_log(type, value):
     if streamer_started:
         streamer.log(type, value)
     else:
         print("Not streaming value ", type, "=", value)
 
+# Class to extend threading.Thread so we can start up the new streaming thread
 class readingThread (threading.Thread):
     def __init__(self, threadID, name, counter):
         threading.Thread.__init__(self)
@@ -84,6 +99,7 @@ class readingThread (threading.Thread):
         stream_readings()
         print ("Exiting " + self.name)
 
+# Get sensor readings and send to the streamer
 def stream_readings():
     while True:
         i_temp_c, i_temp_f = read_internal_temperature()
@@ -107,6 +123,7 @@ def stream_readings():
         print("Sleeping for 15 minutes")
         sleep(900)
 
+# Twitter detects repetition, so timestamp the tweets to prevent them reading as duplicates
 def get_timestamp():
     timestamp = strftime("%Y%m%d-%H:%M:%S")
 
@@ -120,9 +137,13 @@ try:
 except:
     print("Twython did not tweet")
 
+# Start up the ADC
 adc = Adafruit_ADS1x15.ADS1015()
+
+# Set flag for when the palmPi is being shut down to prevent LCD clashes
 shutting_down = False
 
+# Instantiate the LCD
 lcdmode = 'i2c'
 cols = 16
 rows = 2
@@ -135,10 +156,12 @@ lcd = i2c.CharLCD(i2c_expander, address, port=port, charmap=charmap,
                   cols=cols, rows=rows)
 lcd.clear()
 
+# Define the momentary, illuminated button
 red_button_led = LED(18)
 red_button = Button(17)
 red_button_led.on()
 
+# Pick up when the PowerBoost 1000C alerts a battery warning. Do it as a Button, though should just be a generic input device
 battery_warning = Button(4)
 battery_warning.when_pressed = shutdown_battery_warning
 
@@ -162,14 +185,18 @@ except:
 sleep(1)
 lcd.clear()
 
+# Start up the 15-minute looping thread for streaming and tweeting readings
 thread_readings = readingThread(1, "Reading-Thread", 1)
 thread_readings.start()
 
 while True:
+    # If button is pressed when it gets to this point, shutdown palmPi
     if red_button.is_pressed:
         shutdown_manual()
 
+    # if flag is not set, get readings and spit them out onto LCD
     if not shutting_down:
+        # Show the IP addresses of palmPi
         addrs = read_ip_addresses()
         for addr in addrs:
             lcd.write_string(addr)
@@ -177,6 +204,7 @@ while True:
             sleep(1)
             lcd.clear()
 
+        # Read and display internal temperature
         for i in range(0,10):
             temp_c, temp_f = read_internal_temperature()
 
@@ -193,6 +221,7 @@ while True:
             sleep(0.5)
             lcd.clear()
  
+        # Read and display external temperature
         for i in range(0,10):
             temp_c, temp_f = read_external_temperature()
             lcd.write_string("Ext: ")
@@ -209,6 +238,7 @@ while True:
             sleep(0.5)
             lcd.clear()
 
+        # Read and display external pressure reading
         for i in range(0,10):
             pressure = read_external_pressure()
             lcd.write_string("Pres: ")
