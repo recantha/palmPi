@@ -10,13 +10,12 @@ from time import sleep, strftime
 import Adafruit_ADS1x15
 import math
 import bme280
-from gpiozero import PWMLED, Button
+from gpiozero import LED, Button
 from subprocess import call
 from ISStreamer.Streamer import Streamer
 import threading
 from twython import Twython
 from auth import (consumer_key, consumer_secret, access_token, access_token_secret)
-import logging
 
 # Function to return IP address list
 def read_ip_addresses():
@@ -71,7 +70,7 @@ def shutdown(reason):
     except:
         print("Failed to send tweet")
 
-    logger.info("Shutting down - %s", reason)
+    log("Shutting down - " + reason)
 
     lcd.clear()
     lcd.write_string('Shutting down')
@@ -101,10 +100,10 @@ class readingThread (threading.Thread):
         self.daemon = True
 
     def run(self):
-        print ("Starting " + self.name)
+        print("Starting " + self.name)
         print("Streaming readings")
         stream_readings()
-        print ("Exiting " + self.name)
+        print("Exiting " + self.name)
 
 # Get sensor readings and send to the streamer
 def stream_readings():
@@ -123,10 +122,12 @@ def stream_readings():
 
         try:
             twitter_status = get_timestamp() + " - Int temp: " + str(i_temp_c) + "C / Ext temp:" + str(e_temp_c) + "C / Pressure: " + str(e_pressure) + "hPa"
-            logger.info(twitter_status)
+            log("Attempting to tweet - " + twitter_status)
             twitter.update_status(status=twitter_status)
+
         except:
             print("Twython did not tweet")
+            log("Twython did not tweet")
 
         print("Sleeping for 15 minutes")
         sleep(900)
@@ -137,29 +138,29 @@ def get_timestamp():
 
     return timestamp
 
+def log(msg):
+    path = 'palmPi.log'
+    log_file = open(path, 'a')
+    log_file.write(get_timestamp() + ":" + msg + "\n")
+    log_file.close()
+
+# Start up logging
+log("Started up palmPi")
+
+# Start Twitter client
 try:
     twitter = Twython(consumer_key, consumer_secret, access_token, access_token_secret)
     twitter_status = "palmPi started up at " + get_timestamp()
     twitter.update_status(status=twitter_status)
+    log("Twitter client started")
 
 except:
     print("Twython did not tweet")
-
-# Start up logging
-logger = logging.getLogger("palmPi_logger")
-logging.basicConfig(filename="palmPi.log")
-logger.setLevel(logging.INFO)
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-ch.setFormatter(formatter)
-logger.addHandler(ch)
-
-logger.info(get_timestamp() + " Started up palmPi")
+    log("Twitter client did not start")
 
 # Start up the ADC
 adc = Adafruit_ADS1x15.ADS1015()
-logger.info(get_timestamp() + " Started ADC")
+log("Started ADC")
 
 # Set flag for when the palmPi is being shut down to prevent LCD clashes
 shutting_down = False
@@ -176,12 +177,12 @@ port = 1 # 0 on an older Pi
 lcd = i2c.CharLCD(i2c_expander, address, port=port, charmap=charmap,
                   cols=cols, rows=rows)
 lcd.clear()
-logger.info(get_timestamp() + " LCD instantiated")
+log("LCD instantiated")
 
 # Define the momentary, illuminated button
-red_button_led = PWMLED(18)
+red_button_led = LED(18)
 red_button = Button(17)
-red_button_led.blink(fade_in_time=1, fade_out_time=1, n=3)
+red_button_led.blink(n=3)
 
 # Pick up when the PowerBoost 1000C alerts a battery warning. Do it as a Button, though should just be a generic input device
 battery_warning = Button(4)
@@ -199,12 +200,12 @@ try:
     streamer_started = True
     print("Streamer started")
     lcd.write_string("Streamer started")
-    loggger.info(get_timestamp() + " Streamer started")
+    log("Streamer started")
 
 except:
     lcd.write_string("Streamer not started")
     streamer_started = False
-    logging.debug(get_timestamp() + " Streamer did not start")
+    log("Streamer did not start")
 
 sleep(1)
 lcd.clear()
@@ -212,9 +213,9 @@ lcd.clear()
 # Start up the 15-minute looping thread for streaming and tweeting readings
 thread_readings = readingThread(1, "Reading-Thread", 1)
 thread_readings.start()
-logger.info(get_timestamp() + " Started readings thread")
+log("Started readings thread")
+log("Going into main loop")
 
-logger.info(get_timestamp() + " Going into main loop")
 while True:
     # If button is pressed when it gets to this point, shutdown palmPi
     if red_button.is_pressed:
