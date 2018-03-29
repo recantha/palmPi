@@ -62,15 +62,16 @@ def shutdown_battery_warning():
 
 # Actual shutdown function
 def shutdown(reason):
+    log("Shutting down - " + reason)
+
     shutting_down = True
 
     try:
         twitter_status = get_timestamp() + " - Shutting down - " + reason
         twitter.update_status(status=twitter_status)
+
     except:
         print("Failed to send tweet")
-
-    log("Shutting down - " + reason)
 
     lcd.clear()
     lcd.write_string('Shutting down')
@@ -78,7 +79,7 @@ def shutdown(reason):
     lcd.clear()
 
     lcd.write_string(reason)
-    red_button_led.blink(fade_in_time=1, fade_out_time=1, n=3)
+    red_button_led.blink(n=3)
     sleep(2)
     call("sudo shutdown -h now", shell=True)
     exit(1)
@@ -139,7 +140,7 @@ def get_timestamp():
     return timestamp
 
 def log(msg):
-    path = 'palmPi.log'
+    path = '/home/pi/palmPi/palmPi.log'
     log_file = open(path, 'a')
     log_file.write(get_timestamp() + ":" + msg + "\n")
     log_file.close()
